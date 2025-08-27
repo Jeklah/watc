@@ -10,7 +10,7 @@ A powerful CLI tool for analyzing binaries to determine C library versions used 
   - External tool integration (`strings`, `readelf`)
   - Symbol categorization and confidence scoring
   - Version string extraction
-- **Online Database Integration**: Query libc.blukat.me for accurate version matching
+- **Online Database Integration**: Query libc.rip for accurate version matching
 - **Flexible Output**: Pretty-printed, JSON, CSV, and simple text formats
 - **Comprehensive Symbol Analysis**: Categorizes symbols by type (memory, string, I/O, etc.)
 - **Enhanced ELF Analysis**: Integrates with `readelf` for detailed ELF information
@@ -227,7 +227,7 @@ Symbols are automatically categorized into:
 - **Versioned**: Symbols with explicit version information
 
 ### 4. Online Database Queries
-- Queries libc.blukat.me database for accurate version matching
+- Queries libc.rip database for accurate version matching
 - Uses intelligent symbol selection for optimal results
 - Provides confidence scores for matches
 
@@ -269,7 +269,7 @@ Minimal text output with key information only.
 
 ## API Integration
 
-watc integrates with the libc.blukat.me database to provide accurate C library version detection. The database contains fingerprints of various libc versions across different operating systems and architectures.
+watc integrates with the libc.rip database to provide accurate C library version detection. The database contains fingerprints of various libc versions across different operating systems and architectures.
 
 ### Supported Libraries
 - GNU C Library (glibc) - Linux
@@ -350,6 +350,6 @@ watc/
 ## Acknowledgments
 
 - [goblin](https://github.com/m4b/goblin) - Binary parsing library
-- [libc.blukat.me](https://libc.blukat.me) - C library database
+- [libc.rip](https://libc.rip) - C library database
 - [clap](https://github.com/clap-rs/clap) - Command line argument parsing
 - GNU binutils - readelf and strings tools
