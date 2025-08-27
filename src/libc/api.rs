@@ -1,6 +1,6 @@
-//! API client for libc.blukat.me database
+//! API client for libc.rip database
 //!
-//! This module provides functionality to query the libc.blukat.me database
+//! This module provides functionality to query the libc.rip database
 //! to identify C library versions based on function symbols.
 
 use anyhow::{anyhow, Result};
@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-/// Base URL for the libc.blukat.me API
-const LIBC_API_BASE_URL: &str = "https://libc.blukat.me/api";
+/// Base URL for the libc.rip API
+const LIBC_API_BASE_URL: &str = "https://libc.rip/api";
 
 /// Timeout for API requests
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -334,11 +334,20 @@ impl LibcApiClient {
 
     /// Test API connectivity
     pub async fn test_connection(&self) -> Result<bool> {
-        let url = format!("{}/status", self.config.base_url);
+        // Since there's no status endpoint, test with a minimal find request
+        let url = format!("{}/find", self.config.base_url);
+
+        // Create a test payload with a dummy symbol (API requires at least one filter)
+        let mut symbols = HashMap::new();
+        symbols.insert("printf".to_string(), "0x12345".to_string());
+
+        let mut test_payload = HashMap::new();
+        test_payload.insert("symbols", symbols);
 
         let response = self
             .client
-            .get(&url)
+            .post(&url)
+            .json(&test_payload)
             .send()
             .await
             .map_err(|e| anyhow!("Failed to test API connection: {}", e))?;
