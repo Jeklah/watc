@@ -1,13 +1,15 @@
 //! Libc database interaction module
 //!
-//! This module provides functionality for querying the libc.blukat.me database
+//! This module provides functionality for querying the libc.rip database
 //! and matching symbols to determine C library versions.
 
 pub mod api;
 pub mod matcher;
 
-pub use api::{ApiConfig, LibcApiClient, LibcMatch, LibcResponse, QueryInfo, prepare_symbols_for_query};
-pub use matcher::{DetectionResult, DetectionStrategy, LibcMatcher, LibcMatchWithScore};
+pub use api::{
+    prepare_symbols_for_query, ApiConfig, LibcApiClient, LibcMatch, LibcResponse, QueryInfo,
+};
+pub use matcher::{DetectionResult, DetectionStrategy, LibcMatchWithScore, LibcMatcher};
 
 use anyhow::Result;
 
