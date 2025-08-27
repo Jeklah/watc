@@ -48,7 +48,7 @@ echo "8. Analysis with symbol statistics:"
 $WATC analyze /bin/ls --offline --show-stats
 echo
 
-echo "9. Test API connectivity (this will try to connect to libc.blukat.me):"
+echo "9. Test API connectivity (this will try to connect to libc.rip):"
 $WATC test-api || echo "API test failed - this is normal if offline"
 echo
 
@@ -68,5 +68,5 @@ echo "  $WATC analyze <binary_path>                    # Basic analysis"
 echo "  $WATC analyze <binary_path> --verbose          # Detailed analysis"
 echo "  $WATC analyze <binary_path> --format json      # JSON output"
 echo "  $WATC analyze <binary_path> --offline          # Skip online queries"
-echo "  $WATC tools                                     # Check external tools"
-echo "  $WATC test-api                                  # Test API connection"
+echo "  $WATC tools                                    # Check external tools"
+echo "  $WATC test-api                                 # Test API connection"
