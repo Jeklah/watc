@@ -14,7 +14,7 @@ use std::path::PathBuf;
 watc (What Are Those C libraries?) analyzes ELF and PE binaries to determine
 what version of C library was used during compilation. It uses multiple analysis
 methods including symbol extraction, string analysis, and queries to the
-libc.blukat.me database.
+libc.rip database.
 
 Examples:
   watc analyze ./my_binary                 # Analyze a single binary
@@ -102,7 +102,7 @@ pub enum Commands {
         max_api_symbols: usize,
     },
 
-    /// Test API connectivity to libc.blukat.me
+    /// Test API connectivity to libc.rip
     TestApi {
         /// Custom API base URL
         #[arg(long)]
