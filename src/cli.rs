@@ -32,7 +32,6 @@ impl CliApp {
         match &self.args.command {
             Commands::Analyze {
                 file_path,
-                offline,
                 min_string_length,
                 max_string_length,
                 no_external_strings,
@@ -40,6 +39,7 @@ impl CliApp {
                 show_strings: _,
                 show_symbols: _,
                 high_confidence_only: _,
+                json_file,
                 no_readelf,
                 readelf_path,
                 readelf_timeout,
@@ -48,10 +48,10 @@ impl CliApp {
             } => {
                 self.run_analyze(
                     file_path,
-                    *offline,
                     *min_string_length,
                     *max_string_length,
                     *no_external_strings,
+                    *json_file,
                     *no_readelf,
                     readelf_path.as_deref(),
                     *readelf_timeout,
@@ -73,10 +73,10 @@ impl CliApp {
     async fn run_analyze(
         &self,
         file_path: &std::path::Path,
-        offline: bool,
         min_string_length: usize,
         max_string_length: usize,
         no_external_strings: bool,
+        json_file: bool,
         no_readelf: bool,
         readelf_path: Option<&str>,
         readelf_timeout: u64,
@@ -133,38 +133,34 @@ impl CliApp {
             Some(&file_path.to_string_lossy()),
         )?;
 
-        // Perform libc detection if not offline
-        let detection = if !offline {
-            let _api_config = ApiConfig {
-                timeout: Duration::from_secs(api_timeout),
-                max_symbols_per_request: max_api_symbols,
-                ..Default::default()
-            };
+        // Always perform libc detection via API
+        let _api_config = ApiConfig {
+            timeout: Duration::from_secs(api_timeout),
+            max_symbols_per_request: max_api_symbols,
+            ..Default::default()
+        };
 
-            match create_matcher() {
-                Ok(matcher) => {
-                    if self.args.verbose {
-                        eprintln!("Querying libc database...");
-                    }
-                    match matcher.detect_libc_version(&analysis).await {
-                        Ok(result) => Some(result),
-                        Err(e) => {
-                            if self.args.verbose {
-                                eprintln!("Warning: Failed to query libc database: {}", e);
-                            }
-                            None
-                        }
-                    }
+        let detection = match create_matcher() {
+            Ok(matcher) => {
+                if self.args.verbose {
+                    eprintln!("Querying libc database...");
                 }
-                Err(e) => {
-                    if self.args.verbose {
-                        eprintln!("Warning: Failed to create libc matcher: {}", e);
+                match matcher.detect_libc_version(&analysis).await {
+                    Ok(result) => Some(result),
+                    Err(e) => {
+                        if self.args.verbose {
+                            eprintln!("Warning: Failed to query libc database: {}", e);
+                        }
+                        None
                     }
-                    None
                 }
             }
-        } else {
-            None
+            Err(e) => {
+                if self.args.verbose {
+                    eprintln!("Warning: Failed to create libc matcher: {}", e);
+                }
+                None
+            }
         };
 
         // Format and output results
@@ -174,8 +170,81 @@ impl CliApp {
             self.args.verbose,
         );
 
+        // Output to stdout
         let mut stdout = io::stdout();
         formatter.write_analysis_results(&mut stdout, &analysis, detection.as_ref())?;
+
+        // Also output JSON to file if requested
+        if json_file {
+            let binary_name = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            let json_filename = format!("analysis_{}.json", binary_name);
+
+            let json_output = serde_json::json!({
+                "binary_info": {
+                    "path": analysis.binary_analysis.binary_info.path,
+                    "format": analysis.binary_analysis.binary_info.format.to_string(),
+                    "architecture": analysis.binary_analysis.binary_info.architecture,
+                    "bitness": analysis.binary_analysis.binary_info.bitness,
+                    "entry_point": analysis.binary_analysis.binary_info.entry_point,
+                    "dependencies": analysis.binary_analysis.binary_info.dependencies
+                },
+                "symbol_analysis": {
+                    "total_symbols": analysis.categorized_symbols.len(),
+                    "libc_symbols": analysis.libc_symbols.len(),
+                    "version_strings": analysis.version_strings,
+                    "symbol_statistics": analysis.symbol_statistics,
+                    "all_symbols": analysis.categorized_symbols.iter().map(|categorized| {
+                        serde_json::json!({
+                            "name": categorized.symbol.name,
+                            "address": categorized.symbol.address.map(|a| format!("0x{:x}", a)),
+                            "category": format!("{:?}", categorized.category),
+                            "confidence": categorized.confidence,
+                            "clean_name": categorized.clean_name,
+                            "version_info": categorized.version_info
+                        })
+                    }).collect::<Vec<_>>(),
+                    "libc_symbols_detailed": analysis.libc_symbols.iter().map(|categorized| {
+                        serde_json::json!({
+                            "name": categorized.symbol.name,
+                            "address": categorized.symbol.address.map(|a| format!("0x{:x}", a)),
+                            "confidence": categorized.confidence,
+                            "clean_name": categorized.clean_name,
+                            "category": format!("{:?}", categorized.category),
+                            "version_info": categorized.version_info
+                        })
+                    }).collect::<Vec<_>>(),
+                    "all_strings": analysis.filtered_strings
+                },
+                "libc_detection": detection.map(|d| serde_json::json!({
+                    "best_confidence": d.best_confidence,
+                    "strategy": format!("{:?}", d.strategy),
+                    "symbols_analyzed": d.symbols_analyzed,
+                    "readelf_enhanced": analysis.binary_analysis.binary_info.format.to_string() == "ELF" &&
+                        analysis.filtered_strings.iter().any(|s| s.contains("Build ID:") || s.contains("/lib")),
+                    "matches": d.matches.iter().map(|m| serde_json::json!({
+                        "name": m.libc_match.name,
+                        "version": m.libc_match.version,
+                        "architecture": m.libc_match.arch,
+                        "os": m.libc_match.os,
+                        "overall_score": m.overall_score,
+                        "symbol_score": m.symbol_score,
+                        "symbols_matched": m.libc_match.symbols_matched,
+                        "matched_symbols": m.libc_match.matched_symbols,
+                        "confidence": m.libc_match.confidence
+                    })).collect::<Vec<_>>(),
+                    "warnings": d.warnings
+                }))
+            });
+
+            std::fs::write(&json_filename, serde_json::to_string_pretty(&json_output)?)?;
+
+            if self.args.verbose || self.args.format == crate::cli::OutputFormat::Pretty {
+                eprintln!("📄 JSON analysis saved to: {}", json_filename);
+            }
+        }
 
         Ok(0)
     }
