@@ -63,8 +63,8 @@ watc analyze --verbose /path/to/binary
 # JSON output for programmatic use
 watc analyze --format json /path/to/binary
 
-# Offline mode (skip online database queries)
-watc analyze --offline /path/to/binary
+# Save complete JSON analysis to file
+watc analyze --json-file /path/to/binary
 
 # Disable external tools
 watc analyze --no-readelf --no-external-strings /path/to/binary
@@ -132,6 +132,7 @@ Top matches:
    Architecture: x86_64
    OS: linux
    Symbols matched: 42
+   Download: https://libc.rip/download/libc6_2.31-0ubuntu9.9_amd64.so
 
 📄 Version Strings
   GLIBC_2.2.5
@@ -164,7 +165,18 @@ $ watc analyze /bin/ls --format json
       "Memory": 8,
       "String": 12,
       "FileIO": 10
-    }
+    },
+    "all_symbols": [
+      {
+        "name": "printf",
+        "address": "0x1234",
+        "category": "LibcStandard",
+        "confidence": 0.95,
+        "clean_name": "printf",
+        "version_info": null
+      }
+    ],
+    "all_strings": ["GLIBC_2.31", "main", "printf"]
   },
   "libc_detection": {
     "best_confidence": 0.952,
@@ -182,6 +194,50 @@ $ watc analyze /bin/ls --format json
   }
 }
 ```
+
+### JSON File Output
+
+Save complete analysis results to a JSON file:
+
+```bash
+$ watc analyze /bin/ls --json-file
+🔍 Binary Analysis Results
+==================================================
+[... normal output ...]
+📄 JSON analysis saved to: analysis_ls.json
+
+$ ls -la analysis_ls.json
+-rw-rw-r-- 1 user user 54809 analysis_ls.json
+```
+
+The JSON file contains complete analysis data including all symbols, strings, and detection results, suitable for programmatic processing or integration with other tools.
+
+### API Integration Example
+
+The tool integrates with the libc.rip database to identify C library versions based on symbol addresses:
+
+```bash
+$ watc analyze /path/to/binary --verbose
+🔍 Binary Analysis Results
+==================================================
+[... analysis output ...]
+
+🎯 Libc Detection Results
+Detection strategy: HighConfidenceSymbols
+Symbols analyzed: 15
+Best confidence: 95.2%
+
+Top matches:
+1. libc6_2.27-3ubuntu1.2_amd64 (95.2%)
+   Version: 2.27-3ubuntu1.2
+   Architecture: amd64
+   OS: linux
+   Symbols matched: 14/15
+   Download: https://libc.rip/download/libc6_2.27-3ubuntu1.2_amd64.so
+
+**Download URL**: The tool provides direct download links to the detected libc version for further analysis or exploitation development.
+
+**Note**: The API requires actual runtime addresses for accurate matching. Dynamically linked binaries may not have sufficient address information for database matching.
 
 ### Checking Tool Availability
 
@@ -240,9 +296,9 @@ Symbols are automatically categorized into:
 | `--verbose` | Enable verbose output | false |
 | `--format` | Output format (pretty, json, csv, simple) | pretty |
 | `--no-color` | Disable colored output | false |
-| `--offline` | Skip online database queries | false |
 | `--no-readelf` | Disable readelf integration | false |
 | `--no-external-strings` | Disable external strings command | false |
+| `--json-file` | Save JSON output to file (analysis_<binary_name>.json) | false |
 | `--readelf-path` | Custom readelf executable path | readelf |
 | `--min-string-length` | Minimum string length | 4 |
 | `--max-string-length` | Maximum string length | 256 |
@@ -259,7 +315,7 @@ Symbols are automatically categorized into:
 Human-readable formatted output with colors and sections.
 
 ### JSON
-Machine-readable JSON format suitable for integration with other tools.
+Machine-readable JSON format suitable for integration with other tools. Includes complete symbol information, strings, and analysis results. Use `--json-file` to save the complete JSON analysis to a file named `analysis_<binary_name>.json`.
 
 ### CSV
 Comma-separated values format for spreadsheet analysis.
@@ -269,7 +325,45 @@ Minimal text output with key information only.
 
 ## API Integration
 
-watc integrates with the libc.rip database to provide accurate C library version detection. The database contains fingerprints of various libc versions across different operating systems and architectures.
+watc automatically queries the libc.rip database for every binary analysis to provide accurate C library version detection. The database contains fingerprints of various libc versions across different operating systems and architectures.
+
+### How API Integration Works
+
+The tool sends symbol names and their hexadecimal addresses to the libc.rip API:
+
+```json
+{
+  "symbols": {
+    "printf": "64f00",
+    "malloc": "97e40", 
+    "free": "97eb0"
+  }
+}
+```
+
+The API responds with matching libc versions that contain those symbols at those addresses:
+
+```json
+[
+  {
+    "id": "libc6_2.27-3ubuntu1.2_amd64",
+    "buildid": "d3cf764b2f97ac3efe366ddd07ad902fb6928fd7",
+    "download_url": "https://libc.rip/download/libc6_2.27-3ubuntu1.2_amd64.so",
+    "symbols": {
+      "printf": "0x64f00",
+      "malloc": "0x97e40",
+      "free": "0x97eb0"
+    }
+  }
+]
+```
+
+### Limitations
+
+- **Dynamic Libraries**: Most modern binaries use dynamic linking, where libc functions are resolved at runtime. These binaries typically don't contain the actual addresses needed for database matching.
+- **Static Binaries**: Statically linked binaries or those with embedded addresses work best with the API.
+- **Runtime Analysis**: For accurate results with dynamic binaries, analysis should be performed at runtime when addresses are resolved.
+- **Network Dependency**: The tool requires internet connectivity to query the libc.rip database for version detection.
 
 ### Supported Libraries
 - GNU C Library (glibc) - Linux
@@ -283,9 +377,9 @@ watc integrates with the libc.rip database to provide accurate C library version
 ### Common Issues
 
 **"No matches found"**
-- Binary might use static linking
-- Library might not be in the database
-- Try `--offline` mode to see local analysis results
+- Binary uses dynamic linking with insufficient address information
+- Library version might not be in the database
+- Binary might use static linking or custom libc
 
 **"readelf not available"**
 - Install binutils package
@@ -295,7 +389,8 @@ watc integrates with the libc.rip database to provide accurate C library version
 **"API connection failed"**
 - Check internet connectivity
 - Use `watc test-api` to verify
-- Use `--offline` mode as fallback
+- Check firewall or proxy settings
+- API might be temporarily unavailable
 
 **"Unsupported binary format"**
 - Currently supports ELF and PE formats only
