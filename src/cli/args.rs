@@ -20,7 +20,6 @@ Examples:
   watc analyze ./my_binary                 # Analyze a single binary
   watc analyze --verbose ./my_binary       # Detailed analysis output
   watc analyze --format json ./my_binary   # Output results as JSON
-  watc analyze --offline ./my_binary       # Skip online database queries
   watc test-api                            # Test API connectivity
 "#)]
 pub struct Args {
@@ -49,10 +48,6 @@ pub enum Commands {
         #[arg(value_name = "BINARY")]
         file_path: PathBuf,
 
-        /// Skip online database queries (offline mode)
-        #[arg(long)]
-        offline: bool,
-
         /// Minimum string length for string analysis
         #[arg(long, default_value_t = 4)]
         min_string_length: usize,
@@ -80,6 +75,10 @@ pub enum Commands {
         /// Only show high-confidence results
         #[arg(long)]
         high_confidence_only: bool,
+
+        /// Save JSON output to file (analysis_<binary_name>.json)
+        #[arg(long)]
+        json_file: bool,
 
         /// Disable readelf integration for ELF files
         #[arg(long)]
@@ -162,11 +161,8 @@ mod tests {
         let args = Args::try_parse_from(&["watc", "analyze", "/path/to/binary"]).unwrap();
 
         match args.command {
-            Commands::Analyze {
-                file_path, offline, ..
-            } => {
+            Commands::Analyze { file_path, .. } => {
                 assert_eq!(file_path, PathBuf::from("/path/to/binary"));
-                assert!(!offline);
             }
             _ => panic!("Expected Analyze command"),
         }
@@ -180,7 +176,6 @@ mod tests {
             "--format",
             "json",
             "analyze",
-            "--offline",
             "--show-stats",
             "/path/to/binary",
         ])
@@ -192,12 +187,10 @@ mod tests {
         match args.command {
             Commands::Analyze {
                 file_path,
-                offline,
                 show_stats,
                 ..
             } => {
                 assert_eq!(file_path, PathBuf::from("/path/to/binary"));
-                assert!(offline);
                 assert!(show_stats);
             }
             _ => panic!("Expected Analyze command"),
