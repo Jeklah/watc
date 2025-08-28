@@ -88,6 +88,27 @@ impl LibcMatcher {
         let mut warnings = Vec::new();
         let mut total_symbols = 0;
 
+        // Check if we have symbols with addresses
+        let symbols_with_addresses = analysis
+            .categorized_symbols
+            .iter()
+            .filter(|sym| sym.symbol.address.is_some())
+            .count();
+
+        if symbols_with_addresses == 0 {
+            warnings.push(
+                "No symbols with addresses found - binary uses dynamic linking. \
+                API requires runtime addresses for accurate matching."
+                    .to_string(),
+            );
+        } else if symbols_with_addresses < 5 {
+            warnings.push(format!(
+                "Only {} symbols with addresses found - results may be limited. \
+                Dynamic binaries are harder to match accurately.",
+                symbols_with_addresses
+            ));
+        }
+
         // Strategy 1: Try versioned symbols first (highest confidence)
         let versioned_symbols = self.extract_versioned_symbols(analysis);
         if !versioned_symbols.is_empty() {
@@ -169,10 +190,18 @@ impl LibcMatcher {
 
         // Add warnings based on results
         if final_matches.is_empty() {
-            warnings.push(
-                "No libc matches found - binary might use static linking or unsupported libc"
-                    .to_string(),
-            );
+            if symbols_with_addresses == 0 {
+                warnings.push(
+                    "No libc matches found - dynamically linked binary requires runtime addresses. \
+                    Consider analyzing the binary at runtime or with a debugger to get actual function addresses."
+                        .to_string(),
+                );
+            } else {
+                warnings.push(
+                    "No libc matches found - addresses may not match database entries or unsupported libc version"
+                        .to_string(),
+                );
+            }
         } else if best_confidence < MEDIUM_CONFIDENCE_THRESHOLD {
             warnings.push(
                 "Low confidence in detection results - consider manual verification".to_string(),
@@ -194,57 +223,67 @@ impl LibcMatcher {
     }
 
     /// Extract versioned symbols (e.g., printf@@GLIBC_2.2.5)
-    fn extract_versioned_symbols(&self, analysis: &ComprehensiveAnalysis) -> Vec<String> {
+    fn extract_versioned_symbols(
+        &self,
+        analysis: &ComprehensiveAnalysis,
+    ) -> Vec<(String, Option<u64>)> {
         analysis
             .categorized_symbols
             .iter()
             .filter(|sym| sym.category == SymbolCategory::Versioned)
-            .map(|sym| sym.symbol.name.clone())
+            .map(|sym| (sym.symbol.name.clone(), sym.symbol.address))
             .collect()
     }
 
     /// Extract high-confidence symbols
-    fn extract_high_confidence_symbols(&self, analysis: &ComprehensiveAnalysis) -> Vec<String> {
+    fn extract_high_confidence_symbols(
+        &self,
+        analysis: &ComprehensiveAnalysis,
+    ) -> Vec<(String, Option<u64>)> {
         analysis
             .libc_symbols
             .iter()
             .filter(|sym| sym.confidence >= HIGH_CONFIDENCE_THRESHOLD)
-            .map(|sym| sym.clean_name.clone())
+            .map(|sym| (sym.clean_name.clone(), sym.symbol.address))
             .take(15) // Limit to avoid overwhelming the API
             .collect()
     }
 
     /// Extract symbols from different categories for broader matching
-    fn extract_mixed_category_symbols(&self, analysis: &ComprehensiveAnalysis) -> Vec<String> {
+    fn extract_mixed_category_symbols(
+        &self,
+        analysis: &ComprehensiveAnalysis,
+    ) -> Vec<(String, Option<u64>)> {
         let mut symbols = Vec::new();
         let categories_to_include = vec![
+            SymbolCategory::LibcStandard,
             SymbolCategory::Memory,
             SymbolCategory::String,
             SymbolCategory::FileIO,
-            SymbolCategory::LibcStandard,
         ];
 
         for category in categories_to_include {
-            let category_symbols: Vec<String> = analysis
-                .categorized_symbols
+            let category_symbols: Vec<(String, Option<u64>)> = analysis
+                .libc_symbols
                 .iter()
                 .filter(|sym| {
                     sym.category == category && sym.confidence >= MEDIUM_CONFIDENCE_THRESHOLD
                 })
-                .map(|sym| sym.clean_name.clone())
-                .take(5) // Take top 5 from each category
+                .map(|sym| (sym.clean_name.clone(), sym.symbol.address))
+                .take(3) // Take a few from each category
                 .collect();
+
             symbols.extend(category_symbols);
         }
 
-        // Remove duplicates
-        symbols.sort();
-        symbols.dedup();
         symbols
     }
 
     /// Query the API with a list of symbols
-    async fn query_api_with_symbols(&self, symbols: &[String]) -> Result<LibcResponse> {
+    async fn query_api_with_symbols(
+        &self,
+        symbols: &[(String, Option<u64>)],
+    ) -> Result<LibcResponse> {
         if symbols.is_empty() {
             return Ok(LibcResponse {
                 results: Vec::new(),
@@ -468,7 +507,9 @@ mod tests {
 
         let versioned = matcher.extract_versioned_symbols(&analysis);
         assert!(!versioned.is_empty());
-        assert!(versioned.contains(&"printf@@GLIBC_2.2.5".to_string()));
+        assert!(versioned
+            .iter()
+            .any(|(name, _)| name == "printf@@GLIBC_2.2.5"));
     }
 
     #[test]
@@ -492,14 +533,21 @@ mod tests {
 
         let libc_match = LibcMatch {
             id: "test-id".to_string(),
+            buildid: String::new(),
+            md5: String::new(),
+            sha1: String::new(),
+            sha256: String::new(),
+            download_url: None,
+            symbols_url: None,
+            libs_url: None,
+            symbols: std::collections::HashMap::new(),
+            confidence: 0.95,
+            symbols_matched: 5,
+            matched_symbols: vec!["printf".to_string(), "malloc".to_string()],
             name: "GNU C Library".to_string(),
             arch: Some("x86_64".to_string()),
             os: Some("linux".to_string()),
             version: Some("2.31".to_string()),
-            download_url: None,
-            confidence: 0.9,
-            symbols_matched: 10,
-            matched_symbols: vec!["printf".to_string(), "malloc".to_string()],
         };
 
         let scored = matcher.calculate_match_score(
