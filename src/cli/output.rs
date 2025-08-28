@@ -188,7 +188,28 @@ impl OutputFormatter {
                 "total_symbols": analysis.categorized_symbols.len(),
                 "libc_symbols": analysis.libc_symbols.len(),
                 "version_strings": analysis.version_strings,
-                "symbol_statistics": analysis.symbol_statistics
+                "symbol_statistics": analysis.symbol_statistics,
+                "all_symbols": analysis.categorized_symbols.iter().map(|categorized| {
+                    serde_json::json!({
+                        "name": categorized.symbol.name,
+                        "address": categorized.symbol.address.map(|a| format!("0x{:x}", a)),
+                        "category": format!("{:?}", categorized.category),
+                        "confidence": categorized.confidence,
+                        "clean_name": categorized.clean_name,
+                        "version_info": categorized.version_info
+                    })
+                }).collect::<Vec<_>>(),
+                "libc_symbols_detailed": analysis.libc_symbols.iter().map(|categorized| {
+                    serde_json::json!({
+                        "name": categorized.symbol.name,
+                        "address": categorized.symbol.address.map(|a| format!("0x{:x}", a)),
+                        "confidence": categorized.confidence,
+                        "clean_name": categorized.clean_name,
+                        "category": format!("{:?}", categorized.category),
+                        "version_info": categorized.version_info
+                    })
+                }).collect::<Vec<_>>(),
+                "all_strings": analysis.filtered_strings
             },
             "libc_detection": detection.map(|d| serde_json::json!({
                 "best_confidence": d.best_confidence,
@@ -204,7 +225,8 @@ impl OutputFormatter {
                     "overall_score": m.overall_score,
                     "symbol_score": m.symbol_score,
                     "symbols_matched": m.libc_match.symbols_matched,
-                    "matched_symbols": m.libc_match.matched_symbols
+                    "matched_symbols": m.libc_match.matched_symbols,
+                    "confidence": m.libc_match.confidence
                 })).collect::<Vec<_>>(),
                 "warnings": d.warnings
             }))
@@ -492,6 +514,14 @@ impl OutputFormatter {
                 "   Symbols matched: {}",
                 match_result.libc_match.symbols_matched
             )?;
+
+            if let Some(ref download_url) = match_result.libc_match.download_url {
+                writeln!(
+                    writer,
+                    "   {}",
+                    self.colorize(&format!("Download: {}", download_url), Color::Cyan)
+                )?;
+            }
 
             if self.verbose && !match_result.libc_match.matched_symbols.is_empty() {
                 writeln!(
